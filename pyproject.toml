@@ -1,0 +1,34 @@
+[project]
+name = "lobopy"
+
+version = "0.1.0"
+description = "Lobopy is a lightweight PyTorch/HuggingFace library for analysing and steering/abliterating the activations of causal language models."
+readme = "README.md"
+authors = [
+    { name = "OzelTam" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "accelerate>=1.12.0",
+    "protobuf>=6.33.5",
+    "sentencepiece>=0.2.1",
+    "tiktoken>=0.12.0",
+    "torch>=2.10.0",
+    "tqdm>=4.67.3",
+    "transformers>=5.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.9.18,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts   = "-v"
+pythonpath = ["src"]
+
