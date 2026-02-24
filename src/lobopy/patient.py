@@ -4,7 +4,7 @@ from typing import Literal, List, Union, Dict, Any, Optional, Iterable, Callable
 import torch.nn as nn
 from dataclasses import dataclass, field
 from tqdm import tqdm
-from .models import AnalysisResult, PatientConfig, PromptResponse, StimulationResult
+from .models import AnalysisResult, PatientConfig, ContentResponse, StimulationResult, ContentType
 from .aggregators import Aggregator
 
 # ---------------------------------------------------------------------------
@@ -266,11 +266,12 @@ class Patient:
 
     
     
-    def _process_batch(self, batch_prompts: List[str]) -> List[PromptResponse]:
+    def _process_batch(self, batch_contents: List[Tuple[ContentType, str]]) -> List[ContentResponse]:
         """
-        Processes a batch of prompts to generate responses and capture activations.
+        Processes a batch of contents to generate responses and capture activations.
         """
-        inputs = self.tokenizer(batch_prompts, return_tensors="pt", padding=True, truncation=True)
+        batch_strings = [c[1] for c in batch_contents]
+        inputs = self.tokenizer(batch_strings, return_tensors="pt", padding=True, truncation=True)
         inputs = {k: v.to(self.llm.device) for k, v in inputs.items()}
         
         activations_dict = self._get_thread_activations()
@@ -282,7 +283,7 @@ class Patient:
                 self.llm(**inputs)
             
         batch_results = []
-        curr_batch_size = len(batch_prompts)
+        curr_batch_size = len(batch_contents)
         
         for b in range(curr_batch_size):
             activations = {}
@@ -304,8 +305,8 @@ class Patient:
                 for k in activations:
                     activations[k] = activations[k][:input_len]
 
-            batch_results.append(PromptResponse(
-                prompt=batch_prompts[b],
+            batch_results.append(ContentResponse(
+                content=batch_contents[b][0],
                 activations=activations,
                 input_tokens=input_tokens
             ))
@@ -317,45 +318,24 @@ class Patient:
         return batch_results
 
 
-    def _format_prompts(self, prompts: Union[str, Dict[str, str], List[Union[str, Dict[str, str]]]]) -> List[str]:
+    def _format_content(self, content: ContentType) -> str:
         """
-        Formats prompts for processing.
+        Formats a single content item into a standardized string format.
         """
-        final_prompts = []
-        
-        # 1. Single string
-        if isinstance(prompts, str):
-            final_prompts = [prompts]
+        if isinstance(content, str):
+            return content
             
-        # 2. Single message dict -> convert to list (one conversation)
-        elif isinstance(prompts, dict):
-            final_prompts = [self.tokenizer.apply_chat_template([prompts], tokenize=False, add_generation_prompt=True)]
+        elif isinstance(content, dict):
+            return self.tokenizer.apply_chat_template([content], tokenize=False, add_generation_prompt=True)
             
-        elif isinstance(prompts, list):
-            if len(prompts) == 0:
-                final_prompts = []
+        elif isinstance(content, list):
+            if all(isinstance(x, dict) for x in content):
+                 return self.tokenizer.apply_chat_template(content, tokenize=False, add_generation_prompt=True)
             else:
-                # Check for single conversation (List[Dict]) vs List of prompts
-                # If all items are dicts, treat as ONE conversation history.
-                if all(isinstance(x, dict) for x in prompts):
-                     final_prompts = [self.tokenizer.apply_chat_template(prompts, tokenize=False, add_generation_prompt=True)]
-                else:
-                    # Mixed list or list of strings/chats
-                    temp_prompts = []
-                    for p in prompts:
-                        if isinstance(p, str):
-                            temp_prompts.append(p)
-                        elif isinstance(p, list): # Assume list of dicts (conversation)
-                            temp_prompts.append(self.tokenizer.apply_chat_template(p, tokenize=False, add_generation_prompt=True))
-                        elif isinstance(p, dict): # Single dict -> single message conversation
-                            temp_prompts.append(self.tokenizer.apply_chat_template([p], tokenize=False, add_generation_prompt=True))
-                        else:
-                             raise ValueError(f"Unsupported prompt type: {type(p)}")
-                    final_prompts = temp_prompts
+                 raise ValueError("A list content must be a sequence of message dictionaries representing a single conversation.")
+                 
         else:
-             raise ValueError(f"Unsupported prompt type: {type(prompts)}")
-             
-        return final_prompts
+             raise ValueError(f"Unsupported content type: {type(content)}")
 
     # -----------------------------------------------------------------------
     # Analysis & Checkpointing Helpers
@@ -382,8 +362,8 @@ class Patient:
         return None
 
     def _analyse_sequential(self, 
-                            batches: List[List[str]], 
-                            aggregator: Callable[[Dict[int, torch.Tensor], Dict[int, torch.Tensor]], Dict[int, torch.Tensor]], 
+                            batches: List[List[Tuple[ContentType, str]]], 
+                            aggregator: Callable[[Dict[int, torch.Tensor], Dict[int, torch.Tensor]], Dict[int, torch.Tensor]],  
                             last_activations: Optional[Dict[int, torch.Tensor]], 
                             label: str, 
                             checkpoint_dir: Optional[str], 
@@ -411,8 +391,8 @@ class Patient:
         return last_activations
 
     def _analyse_parallel(self, 
-                          batches: List[List[str]], 
-                          aggregator: Callable[[Dict[int, torch.Tensor], Dict[int, torch.Tensor]], Dict[int, torch.Tensor]], 
+                          batches: List[List[Tuple[ContentType, str]]], 
+                          aggregator: Callable[[Dict[int, torch.Tensor], Dict[int, torch.Tensor]], Dict[int, torch.Tensor]],  
                           last_activations: Optional[Dict[int, torch.Tensor]], 
                           label: str, 
                           max_workers: Optional[int], 
@@ -445,8 +425,11 @@ class Patient:
             
         return last_activations
 
+
+    # def generation_analysis()
+
     def analyse(self,
-                prompts: Union[str, Dict[str, str], List[Union[str, Dict[str, str]]]],
+                dataset: Iterable[ContentType],
                 aggregator: Optional[Union[Aggregator, Callable[[Dict[int, torch.Tensor], Dict[int, torch.Tensor]], Dict[int, torch.Tensor]]]] = None,
                 label: Optional[str]= None,
                 layers: Optional[List[int]] = None,
@@ -463,7 +446,7 @@ class Patient:
         If an aggregator is provided, it will combine the activations of the prompts into single output.
         
         Args:
-            prompts: The prompts to analyse.
+            dataset: The dataset of contents to analyse. Iterate over each item.
             aggregator: The aggregator to use for combining activations.
             label: The label for the analysis.
             layers: The layers to analyse.
@@ -477,8 +460,8 @@ class Patient:
         Returns:
             AnalysisResult: The activations of the model.
         """
-        final_prompts = self._format_prompts(prompts)
-        label = label if label else f"analysis_{id(final_prompts)}"
+        final_contents = [(c, self._format_content(c)) for c in dataset]
+        label = label if label else f"analysis_{id(final_contents)}"
         last_activations = None
         start_batch_idx = 0
         
@@ -491,10 +474,10 @@ class Patient:
         batch_size = self.config.batch_size
         
         try:
-            if len(final_prompts) > 1 and aggregator is None:
-                raise ValueError("Aggregator is required for multiple prompts in analyse")
+            if len(final_contents) > 1 and aggregator is None:
+                raise ValueError("Aggregator is required for multiple contents in analyse")
 
-            batches = [final_prompts[i : i + batch_size] for i in range(start_batch_idx * batch_size, len(final_prompts), batch_size)]
+            batches = [final_contents[i : i + batch_size] for i in range(start_batch_idx * batch_size, len(final_contents), batch_size)]
             
             if batches:
                 if parallel:
@@ -519,27 +502,23 @@ class Patient:
             activations=last_activations if last_activations is not None else {})
 
     def stimulate(self, 
-                 prompts: Union[str, Dict[str, str], List[Union[str, Dict[str, str]]]], 
+                 content: ContentType, 
                  layers: Optional[List[int]] = None) -> StimulationResult:
         """
-        Stimulates the model with a single prompt, a list of prompts, or a dataset.
-        Supports raw strings, chat dictionaries, and lists of either.
+        Stimulates the model with a single content.
+        Supports raw string, chat dictionary, or list of chat dictionaries.
         """
-        final_prompts = self._format_prompts(prompts)
+        formatted_str = self._format_content(content)
 
         self._register_layer_hooks(layers_to_hook=layers)
         
         results = []
-        batch_size = self.config.batch_size
-        
         try:
-            for i in tqdm(range(0, len(final_prompts), batch_size), desc="Stimulating"):
-                batch = final_prompts[i : i + batch_size]
-                batch_results = self._process_batch(batch)
-                results.extend(batch_results)
+            batch_results = self._process_batch([(content, formatted_str)])
+            results.extend(batch_results)
         finally:
             self._clear_hooks()
-
+            
         return StimulationResult(
             results=results,
             metadata={
@@ -552,30 +531,29 @@ class Patient:
     # Steering / intervention
     # -----------------------------------------------------------------------
 
-    def generate(self, prompts: Union[str, Dict[str, str], List[Union[str, Dict[str, str]]], torch.Tensor] = None, *args, **kwargs):
+    def generate(self, content: Union[ContentType, torch.Tensor] = None, *args, **kwargs):
         """
         Convenience method to call generate on the underlying language model.
-        Accepts raw strings, chat dictionaries, lists, or pre-tokenized inputs.
-        If raw text or dicts are provided, it automatically tokenizes and decodes the output.
+        Accepts a single content (raw string, chat map, or conversation array), or pre-tokenized inputs.
         """
-        if prompts is None:
+        if content is None:
             return self.llm.generate(*args, **kwargs)
             
-        if isinstance(prompts, torch.Tensor):
-            return self.llm.generate(prompts, *args, **kwargs)
+        if isinstance(content, torch.Tensor):
+            return self.llm.generate(content, *args, **kwargs)
 
-        final_prompts = self._format_prompts(prompts)
+        formatted_str = self._format_content(content)
         
-        inputs = self.tokenizer(final_prompts, return_tensors="pt", padding=True, truncation=True)
+        inputs = self.tokenizer(formatted_str, return_tensors="pt", padding=True, truncation=True)
         inputs = {k: v.to(self.llm.device) for k, v in inputs.items()}
         
         kwargs.update(inputs)
         output_ids = self.llm.generate(*args, **kwargs)
         decoded = self.tokenizer.batch_decode(output_ids, skip_special_tokens=True)
         
-        if isinstance(prompts, (str, dict)):
+        if isinstance(content, (str, dict)):
             return decoded[0]
-        if isinstance(prompts, list) and all(isinstance(x, dict) for x in prompts):
+        if isinstance(content, list) and all(isinstance(x, dict) for x in content):
             return decoded[0]
             
         return decoded

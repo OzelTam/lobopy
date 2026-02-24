@@ -102,8 +102,8 @@ def setup_patient(model_name: str = "Nanbeige/Nanbeige4.1-3B") -> Patient:
 def compute_refusal_path(model: Patient, harmful_train, harmless_train):
     """Compute the contrastive refusal vector between harmful and harmless queries."""
     logger.info("\nComputing harmful and harmless activations...")
-    harmless_analysis = model.analyse(prompts=harmless_train, label="harmless", aggregator=mean_aggregator())
-    harmful_analysis  = model.analyse(prompts=harmful_train,  label="harmful",  aggregator=mean_aggregator())
+    harmless_analysis = model.analyse(dataset=harmless_train, label="harmless", aggregator=mean_aggregator())
+    harmful_analysis  = model.analyse(dataset=harmful_train,  label="harmful",  aggregator=mean_aggregator())
     
     logger.info("Aggregating difference to find refusal vector...")
     refusal = difference_aggregator()(harmful_analysis.activations, harmless_analysis.activations)

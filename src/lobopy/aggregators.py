@@ -11,7 +11,7 @@ def mean_aggregator() -> Aggregator:
     """
     Returns an aggregator that computes the element-wise mean of two activation dicts.
 
-    This is the simplest way to combine activations from two prompts: for each layer
+    This is the simplest way to combine activations from two contents: for each layer
     that appears in both dicts, it averages the tensors token-by-token.
     If the sequence lengths differ, the shorter tensor is padded with zeros on the left
     (matching the left-padding convention used by the tokenizer).
@@ -91,14 +91,14 @@ def normalized_overlay_aggregator(eps: float = 1e-8) -> Aggregator:
 
 def common_ground_aggregator(threshold: float = 0.0) -> Aggregator:
     """
-    Returns an aggregator that retains only the activation components both prompts agree on.
+    Returns an aggregator that retains only the activation components both contents agree on.
 
     For each layer and each hidden dimension, the output is the element-wise minimum of the
     absolute values, with the sign taken from `a`. Components where `a` and `b` have
     opposite signs are zeroed out (they "disagree"). This surfaces the shared subspace
     of two activation patterns.
 
-    Think of it as an activation intersection: what is both prompts collectively "certain"
+    Think of it as an activation intersection: what is both contents collectively "certain"
     about in the same direction.
 
     Args:
@@ -126,11 +126,10 @@ def dampened_accumulator(damping: float = 0.9) -> Aggregator:
     Returns an aggregator that accumulates activations with exponential dampening.
 
     Each time this aggregator is called it treats `a` as the running accumulation and `b`
-    as the new observation. `a` is dampened by `damping` before adding `b`. Over N calls
-    the old activations decay geometrically, so recent prompts have more influence.
+    a is dampened by `damping` before adding `b`. Over N calls the old activations decay geometrically, so recent contents have more influence.
 
     Use this as the `aggregator` argument to `Patient.analyse()` when processing a list
-    of prompts — the result will be a recency-weighted summary of all activations seen.
+    of contents — the result will be a recency-weighted summary of all activations seen.
 
     Args:
         damping (float): Decay factor in (0, 1] applied to the accumulated tensor `a`
@@ -154,7 +153,7 @@ def dampened_accumulator(damping: float = 0.9) -> Aggregator:
 
 def difference_aggregator(absolute: bool = False) -> Aggregator:
     """
-    Returns an aggregator that computes the activation difference between two prompts.
+    Returns an aggregator that computes the activation difference between two contents.
 
     Subtracts `b` from `a` layer-by-layer. This is useful for finding *contrastive*
     directions: what activation pattern separates one concept from another. The result

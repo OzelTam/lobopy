@@ -2,29 +2,65 @@
 
 ![Lobopy Banner](./assets/banner.png)
 
-**Lobopy** is a lightweight PyTorch/HuggingFace library for analysing, steering the activations of causal language models. It provides an intuitive interface for computing and applying contrastive activation pathways during text generation.
+**Lobopy** is a lightweight PyTorch/HuggingFace library for analyzing and steering the activations of causal language models. It provides an intuitive interface for computing and applying contrastive activation pathways during text generation.
+
+## Aim
+
+With Lobopy, you can analyze how a model represents concepts, sentiments, or any other abstract idea, and then use this information to steer the model towards or away from those concepts without fine-tuning.
 
 ### Nomenclature (In Context of Lobopy)
 
 - [**Lobopy**](https://en.wikipedia.org/wiki/Lobotomy): Name of the module.
-- [**Ambale**](https://tureng.com/en/turkish-english/ambale): Steered model, or model steering function.
-- [**Patient**](./src/lobopy/patient.py): The wrapped model that is being analysed.
+- **Patient**: The wrapped language model that is being analyzed and manipulated.
+- **Ambale**: The steered model, or the act of applying steering functions to the model.
+- **Content**: The input provided to the model (`ContentType`). Lobopy handles raw strings, single chat dictionaries (`{"role": "user", "content": "..."}`), and full conversation histories seamlessly (a list of dictionaries).
+- **Dataset**: An iterable (e.g. list) of `ContentType` objects. Functions like `analyse` take a `dataset` to process multiple concepts at once, whereas functions like `stimulate` operate on a single `Content`.
 
-# Aim
+### Data Structure Clarification
 
-With lobopy you can analyse how a model represents concepts, sentiments, or any other abstract idea and then use this information to steer the model towards or away from those concepts.
+When creating a `dataset` of conversations, be mindful of list nesting to avoid ambiguity between a "dataset of single messages" and a "single conversation."
+
+If each item in your dataset is an independent conversation, wrap each sequence of dictionaries in an outer list:
+
+```python
+dataset = [
+    [{"role": "user", "content": "Hello!"}],
+    [{"role": "assistant", "content": "Hi!"}]
+]
+```
+
+If your dataset contains a single conversation with multiple turns, it looks like this:
+
+```python
+dataset = [
+    [{"role": "user", "content": "Hello!"}, {"role": "assistant", "content": "Hi!"}]
+]
+```
+
+Or multiple multi-turn conversations:
+
+```python
+dataset = [
+    [{"role": "user", "content": "Hello!"}, {"role": "assistant", "content": "How are you?"}],
+    [{"role": "assistant", "content": "Hi!"}, {"role": "user", "content": "hello"}]
+]
+```
 
 ## Installation
 
-Git:
+You can install Lobopy directly from the repository:
 
-```
+```bash
 git clone https://github.com/OzelTam/lobopy.git
 cd lobopy
 pip install -e .
 ```
 
+_(Note: To stick to the project's ecosystem, you can also use `uv` instead of pip if you prefer!)_
+
 ## Quick Start
+
+Here is a quick example of how you can extract a concept (like "calmness") and steer a model toward it.
 
 ```python
 from lobopy.patient import Patient, PatientConfig
@@ -35,63 +71,69 @@ from lobopy.ambalefiers import (
     normalize_path,
 )
 
-
+# 1. Initialize the Patient with your HuggingFace model
 model = Patient(
     pretrained_model_name_or_path="HUGGINGFACE_OR_LOCAL_MODEL_PATH",
-    config=PatientConfig(...),
+    config=PatientConfig(batch_size=1, device="cuda"),
 )
 
-# Prompt datasets to analyse a concept. Depending on the model, these can be strings or dicts.
-calm_prompts = ["I feel peaceful", ...]
-anxious_prompts = ["I feel anxious", ...]
+# 2. Define the concept datasets you want to contrast.
+# These can be strings, chat dictionaries, or lists of dictionaries.
+calm_contents = ["I feel peaceful and relaxed.", "Taking a deep breath by the ocean.", "Quiet and serene."]
+anxious_contents = ["I feel incredibly anxious.", "My heart is racing and I'm stressed.", "Everything is overwhelming."]
 
+# 3. Analyze the concepts to extract activations
+calm_reaction = model.analyse(
+    dataset=calm_contents,
+    aggregator=mean_aggregator(),
+    label="calm",
+    parallel=True,
+    max_workers=3,
+    save_checkpoint_every=2,
+    checkpoint_dir="checkpoint"
+)
 
-# Analyse the concepts
-calm_reaction = model.analyse(prompts=calm_prompts,
-                                aggregator=mean_aggregator(),
-                                parallel=True,
-                                max_workers=3,
-                                save_checkpoint_every=2,
-                                checkpoint_dir="checkpoint",
-                                label="calm")
+# Or simply without parallel processing
+anxious_reaction = model.analyse(
+    dataset=anxious_contents,
+    aggregator=mean_aggregator(),
+    label="anxious"
+)
 
-# Or without parallel processing & checkpointing
-anxious_reaction = model.analyse(prompts=anxious_prompts,
-                                label="anxious")
-
-# Get neutral with averaging conflicting sentiment
+# 4. Find the neutral middle-ground of the conflicting sentiments
 mean_reaction = mean_aggregator()(calm_reaction.activations, anxious_reaction.activations)
 
-# Calm path
-calm_path = difference_aggregator()(calm_reaction.activations, mean_reaction.activations)
+# 5. Isolate the "calm" semantic pathway
+calm_path = difference_aggregator()(calm_reaction.activations, mean_reaction)
 
-# Normalize and select top K layers
+# 6. Normalize the pathway and select the most impactful layers
 calm_path = normalize_path(calm_path)
-# k is the number of layers to select, layer_range is the range of layers to select from (0 to 1)
+# k=3 selects the top 3 layers. layer_range limits the search to the middle layers
+# (15% to 75% depth) to avoid lobotomizing core syntax or final output layers.
 calm_path = top_k_layers(calm_path, k=3, layer_range=(0.15, 0.75))
 
-# Steering the model - Use .ambale() to create a new model with the steered activations
+# 7. Steer the model! Create a new context with the steered activations applied.
 calm_model = model.ambale(calm_path, safe_scale_activation(factor=3.0))
 
-# Generate with the steered model
-output = calm_model.generate("I feel calm and peaceful", max_new_tokens=50)
+# Generate text using the newly steered model
+output = calm_model.generate("How are you feeling today?", max_new_tokens=50)
 print(output)
 
-# Save the steered model
+# 8. Save and Load steered models for future use
 calm_model.save("calm_model.lobo")
-
-# Load the steered model
 loaded_calm_model = model.load_ambale("calm_model.lobo")
 ```
 
 ## Examples
 
-- [Tiny Sample](./examples/tiny_sample.py) Uses **TinyLlama/TinyLlama-1.1B-Chat-v1.0**
-- [Mid Sample](./examples/mid_sample.py): Uses **Nanbeige/Nanbeige4.1-3B**
+We provide ready-to-use examples in the `examples/` directory:
 
-## Sources
+- [Tiny Sample](./examples/tiny_sample.py): Uses **TinyLlama-1.1B-Chat-v1.0** for a quick sentiment steering test.
+- [Mid Sample](./examples/mid_sample.py): Uses **Nanbeige4.1-3B** to build a contrastive refusal vector from harmful and harmless instruction datasets.
 
-Here is some of the main sources that inspired the creation of this library:
+## Sources & Inspiration
+
+Here are some of the main sources that inspired the creation of this module:
 
 - [Maxime Labonne - Uncensor any LLM with abliteration](https://huggingface.co/blog/mlabonne/abliteration)
 - [Huggingface (YouTube) - Steering LLM Behavior Without Fine-Tuning](https://www.youtube.com/watch?v=F2jd5WuT-zg)
@@ -99,6 +141,6 @@ Here is some of the main sources that inspired the creation of this library:
 
 ## Planned Improvements
 
-A nice improvement would be to add capability to analyse & capture the model's activations when a specific phrase, token or concept is generated.
+A nice future improvement would be to add the capability to analyze and capture the model's activations specifically when a certain phrase, token, or concept is generated (rather than just prompted).
 
-With the most naive approach surely this process would be a semi-brute force process. But it might reveal some interesting insights about the model's internal representations.
+While a naive approach to this might resemble a semi-brute force search, it could reveal fascinating insights about the model's internal deductive representations and token-by-token generation pathways.

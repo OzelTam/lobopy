@@ -90,16 +90,16 @@ class TestPromptTypes:
         _check_activations(result.results[0].activations, num_layers)
 
     def test_list_of_str(self, patient, num_layers):
-        """A list of raw strings — one PromptResponse per string."""
+        """A list of raw strings — one ContentResponse per string."""
         prompts = [
             "The sky is blue.",
             "Water is wet.",
             "Cats are curious animals.",
         ]
-        result = patient.stimulate(prompts)
-        assert len(result.results) == len(prompts)
-        for pr in result.results:
-            _check_activations(pr.activations, num_layers)
+        results = [patient.stimulate(p) for p in prompts]
+        assert len(results) == len(prompts)
+        for r in results:
+            _check_activations(r.results[0].activations, num_layers)
 
     def test_conversation_list_of_dicts(self, patient, num_layers):
         """A full conversation thread — List[Dict] treated as one context."""
@@ -120,10 +120,10 @@ class TestPromptTypes:
             [{"role": "user", "content": "Hello!"}, {"role": "assistant", "content": "Hi!"}],
             "Another raw string.",
         ]
-        result = patient.stimulate(prompts)
-        assert len(result.results) == 3
-        for pr in result.results:
-            _check_activations(pr.activations, num_layers)
+        results = [patient.stimulate(p) for p in prompts]
+        assert len(results) == 3
+        for r in results:
+            _check_activations(r.results[0].activations, num_layers)
 
     def test_token_counts_differ_by_prompt(self, patient):
         """Longer prompts should produce longer seq dims at each layer."""
@@ -138,7 +138,7 @@ class TestPromptTypes:
         """Chat-formatted and raw string prompts should produce different tensors
         because the tokenizer applies a different template for chat inputs."""
         raw = patient.stimulate("Tell me a joke.")
-        chat = patient.stimulate({"role": "user", "content": "Tell me a joke."})
+        chat = patient.stimulate([{"role": "user", "content": "Tell me a joke."}])
 
         raw_tensor  = list(raw.results[0].activations.values())[0]
         chat_tensor = list(chat.results[0].activations.values())[0]
@@ -164,7 +164,7 @@ class TestAnalyse:
     def test_analyse_str_list(self, patient, num_layers):
         """analyse() with a list of strings and mean_aggregator."""
         result = patient.analyse(
-            prompts=["The cat sat.",  "A dog ran."],
+            dataset=["The cat sat.",  "A dog ran."],
             label="test",
             aggregator=mean_aggregator(),
         )
@@ -174,7 +174,7 @@ class TestAnalyse:
     def test_analyse_returns_aggregated_shape(self, patient, num_layers):
         """The aggregated tensor shape should be 2-D (seq_avg, hidden) for each layer."""
         result = patient.analyse(
-            prompts=["Short.", "Much longer sentence here."],
+            dataset=["Short.", "Much longer sentence here."],
             aggregator=mean_aggregator(),
         )
         for tensor in result.activations.values():
@@ -192,12 +192,12 @@ class TestPathUtils:
     def raw_path(self, patient, num_layers):
         """Build a real difference path from two contrasting prompt sets."""
         happy = patient.analyse(
-            prompts=["She smiled with joy.", "He laughed with delight."],
+            dataset=["She smiled with joy.", "He laughed with delight."],
             aggregator=mean_aggregator(),
             label="happy",
         )
         sad = patient.analyse(
-            prompts=["She wept with grief.", "He sat alone in silence."],
+            dataset=["She wept with grief.", "He sat alone in silence."],
             aggregator=mean_aggregator(),
             label="sad",
         )
@@ -255,12 +255,12 @@ class TestAmbale:
     def steering_path(self, patient):
         """Pre-computed normalised top-2 path for steering tests."""
         happy = patient.analyse(
-            prompts=["She smiled with joy.", "He laughed with delight."],
+            dataset=["She smiled with joy.", "He laughed with delight."],
             aggregator=mean_aggregator(),
             label="happy",
         )
         sad = patient.analyse(
-            prompts=["She wept with grief.", "He sat alone in silence."],
+            dataset=["She wept with grief.", "He sat alone in silence."],
             aggregator=mean_aggregator(),
             label="sad",
         )

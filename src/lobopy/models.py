@@ -17,20 +17,25 @@ class PatientConfig:
     llm_kwargs: Optional[Dict[str, Any]] = field(default_factory=dict)
     tokenizer_kwargs: Optional[Dict[str, Any]] = field(default_factory=dict)
     
+ContentType = Union[
+    str,
+    Dict[str, str],
+    List[Dict[str, str]]
+]
 
 @dataclass
-class PromptResponse:
-    prompt: str | Dict[str, str]
+class ContentResponse:
+    content: ContentType 
     activations: Dict[int, torch.Tensor]  # layer_index -> activation tensor (seq_len, hidden_dim)
     input_tokens: torch.Tensor
     output_tokens: Optional[torch.Tensor] = None
     
     def __hash__(self):
-        return hash(self.prompt)
+        return hash(str(self.content))
 
 @dataclass
 class StimulationResult:
-    results: List[PromptResponse]
+    results: List[ContentResponse]
     metadata: Dict[str, Any] = field(default_factory=dict)
     
     def __len__(self):

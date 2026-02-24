@@ -93,8 +93,8 @@ sad_prompts = [
 ]
 
 
-happy_reaction = model.analyse(prompts=happy_prompts, aggregator=mean_aggregator(), label="happy",parallel=True, max_workers=3, save_checkpoint_every=2,  checkpoint_dir="checkpoint")
-sad_reaction = model.analyse(prompts=sad_prompts, aggregator=mean_aggregator(), label="sad",parallel=True, max_workers=3, save_checkpoint_every=2, checkpoint_dir="checkpoint")
+happy_reaction = model.analyse(dataset=happy_prompts, aggregator=mean_aggregator(), label="happy",parallel=True, max_workers=3, save_checkpoint_every=2,  checkpoint_dir="checkpoint")
+sad_reaction = model.analyse(dataset=sad_prompts, aggregator=mean_aggregator(), label="sad",parallel=True, max_workers=3, save_checkpoint_every=2, checkpoint_dir="checkpoint")
 
 # find middlegroud of happy and sad:
 neutral_emotion_activations = mean_aggregator()(happy_reaction.activations, sad_reaction.activations)

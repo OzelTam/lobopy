@@ -13,7 +13,7 @@ from .ambalefiers import (
     path_stats,
 )
 
-from .models import PromptResponse, StimulationResult
+from .models import ContentResponse, StimulationResult
 from .aggregators import mean_aggregator, difference_aggregator, weighted_mean_aggregator, normalized_overlay_aggregator, common_ground_aggregator
 
 
