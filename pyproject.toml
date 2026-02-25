@@ -1,7 +1,7 @@
 [project]
 name = "lobopy"
 
-version = "1.1.0"
+version = "1.2.0"
 description = "Lobopy is a lightweight PyTorch/HuggingFace library for analysing, steering/abliteration of causal language models."
 readme = "README.md"
 authors = [
