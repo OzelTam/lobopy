@@ -26,6 +26,12 @@ cd lobopy
 pip install -e .
 ```
 
+Or from PyPI:
+
+```bash
+pip install lobopy
+```
+
 _(Note: To stick to the project's ecosystem, you can also use `uv` instead of pip if you prefer!)_
 
 ## Quick Start
