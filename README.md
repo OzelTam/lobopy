@@ -11,40 +11,10 @@ With Lobopy, you can analyze how a model represents concepts, sentiments, or any
 ### Nomenclature (In Context of Lobopy)
 
 - [**Lobopy**](https://en.wikipedia.org/wiki/Lobotomy): Name of the module.
-- **Patient**: The wrapped language model that is being analyzed and manipulated.
-- **Ambale**: The steered model, or the act of applying steering functions to the model.
-- **Content**: The input provided to the model (`ContentType`). Lobopy handles raw strings, single chat dictionaries (`{"role": "user", "content": "..."}`), and full conversation histories seamlessly (a list of dictionaries).
+- [**Patient**](/src/lobopy/patient.py): The wrapped language model that is being analyzed and manipulated.
+- [**Ambale**:](https://tureng.com/en/turkish-english/ambale) The steered model, or the act of applying steering functions to the model.
+- [**Content**](/src/lobopy/models.py): The input provided to the model (`ContentType`). Lobopy handles raw strings, dictionaries, and full conversation histories.
 - **Dataset**: An iterable (e.g. list) of `ContentType` objects. Functions like `analyse` take a `dataset` to process multiple concepts at once, whereas functions like `stimulate` operate on a single `Content`.
-
-### Data Structure Clarification
-
-When creating a `dataset` of conversations, be mindful of list nesting to avoid ambiguity between a "dataset of single messages" and a "single conversation."
-
-If each item in your dataset is an independent conversation, wrap each sequence of dictionaries in an outer list:
-
-```python
-dataset = [
-    [{"role": "user", "content": "Hello!"}],
-    [{"role": "assistant", "content": "Hi!"}]
-]
-```
-
-If your dataset contains a single conversation with multiple turns, it looks like this:
-
-```python
-dataset = [
-    [{"role": "user", "content": "Hello!"}, {"role": "assistant", "content": "Hi!"}]
-]
-```
-
-Or multiple multi-turn conversations:
-
-```python
-dataset = [
-    [{"role": "user", "content": "Hello!"}, {"role": "assistant", "content": "How are you?"}],
-    [{"role": "assistant", "content": "Hi!"}, {"role": "user", "content": "hello"}]
-]
-```
 
 ## Installation
 
@@ -124,11 +94,45 @@ calm_model.save("calm_model.lobo")
 loaded_calm_model = model.load_ambale("calm_model.lobo")
 ```
 
+### Data Structure Clarification
+
+When creating a `dataset` of conversations, be mindful of list nesting to avoid ambiguity between a "dataset of single messages" and a "single conversation."
+
+If each item in your dataset is an independent conversation, wrap each sequence of dictionaries in an outer list:
+
+```python
+dataset = [
+    [{"role": "user", "content": "Hello!"}],
+    [{"role": "assistant", "content": "Hi!"}]
+]
+```
+
+If your dataset contains multiple conversations with multiple turns, it looks like this:
+
+```python
+dataset = [
+    [{"role": "user", "content": "Hello!"}, {"role": "assistant", "content": "How are you?"}],
+    [{"role": "assistant", "content": "Hi!"}, {"role": "user", "content": "hello"}]
+]
+```
+
+If the model does not support templated chat, you can use raw strings to define a dataset:
+
+```python
+dataset = [
+    "Hello!",
+    "How are you?",
+    "Hi!",
+    "hello"
+]
+```
+
 ## Examples
 
 We provide ready-to-use examples in the `examples/` directory:
 
 - [Tiny Sample](./examples/tiny_sample.py): Uses **TinyLlama-1.1B-Chat-v1.0** for a quick sentiment steering test.
+- [Iterative Sample](./examples/tiny_sample_iterative.py): Demonstrates how to use Iterative Analysis on **TinyLlama-1.1B-Chat-v1.0** to steer generation step-by-step.
 - [Mid Sample](./examples/mid_sample.py): Uses **Nanbeige4.1-3B** to build a contrastive refusal vector from harmful and harmless instruction datasets.
 
 ## Sources & Inspiration
@@ -139,8 +143,14 @@ Here are some of the main sources that inspired the creation of this module:
 - [Huggingface (YouTube) - Steering LLM Behavior Without Fine-Tuning](https://www.youtube.com/watch?v=F2jd5WuT-zg)
 - [Welch Labs (YouTube) - The most complex model we actually understand](https://www.youtube.com/watch?v=D8GOeCFFby4)
 
-## Planned Improvements
+## Iterative Analysis
 
-A nice future improvement would be to add the capability to analyze and capture the model's activations specifically when a certain phrase, token, or concept is generated (rather than just prompted).
+With [`iterative_analysis.py`](/src/lobopy/iterative_analysis.py), Lobopy now supports capturing and analyzing the model's activations specifically when a certain phrase, token, or concept is generated (rather than just prompted). See the [Iterative Sample](./examples/tiny_sample_iterative.py) for a demonstration.
 
-While a naive approach to this might resemble a semi-brute force search, it could reveal fascinating insights about the model's internal deductive representations and token-by-token generation pathways.
+## License
+
+lobopy is licensed under the GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later).
+
+Copyright (C) 2026 OzelTam
+
+See the LICENSE file for full license text.
