@@ -1,13 +1,12 @@
 import torch
-from typing import Dict, Callable, Optional, Set
-
+from typing import Dict, Callable, Optional, Set, Literal
 
 # Type alias for clarity
 Activations = Dict[int, torch.Tensor]
 Aggregator = Callable[[Activations, Activations], Activations]
 
 
-def mean_aggregator() -> Aggregator:
+def mean_aggregator(padding_side: Literal["left", "right"] = "left") -> Aggregator:
     """
     Returns an aggregator that computes the element-wise mean of two activation dicts.
 
@@ -25,13 +24,13 @@ def mean_aggregator() -> Aggregator:
         result: Activations = {}
         common_layers = set(a.keys()) & set(b.keys())
         for layer in common_layers:
-            ta, tb = _align_tensors(a[layer], b[layer])
+            ta, tb = _align_tensors(a[layer], b[layer], padding_side=padding_side)
             result[layer] = (ta + tb) / 2.0
         return result
     return aggregate
 
 
-def weighted_mean_aggregator(alpha: float = 0.5) -> Aggregator:
+def weighted_mean_aggregator(alpha: float = 0.5, padding_side: Literal["left", "right"] = "left") -> Aggregator:
     """
     Returns an aggregator that blends two activation dicts with a configurable weight.
 
@@ -53,13 +52,13 @@ def weighted_mean_aggregator(alpha: float = 0.5) -> Aggregator:
         result: Activations = {}
         common_layers = set(a.keys()) & set(b.keys())
         for layer in common_layers:
-            ta, tb = _align_tensors(a[layer], b[layer])
+            ta, tb = _align_tensors(a[layer], b[layer], padding_side=padding_side)
             result[layer] = alpha * ta + (1.0 - alpha) * tb
         return result
     return aggregate
 
 
-def normalized_overlay_aggregator(eps: float = 1e-8) -> Aggregator:
+def normalized_overlay_aggregator(eps: float = 1e-8, padding_side: Literal["left", "right"] = "left") -> Aggregator:
     """
     Returns an aggregator that computes a direction-preserving normalized overlay.
 
@@ -80,7 +79,7 @@ def normalized_overlay_aggregator(eps: float = 1e-8) -> Aggregator:
         result: Activations = {}
         common_layers = set(a.keys()) & set(b.keys())
         for layer in common_layers:
-            ta, tb = _align_tensors(a[layer], b[layer])
+            ta, tb = _align_tensors(a[layer], b[layer], padding_side=padding_side)
             na = ta / (ta.norm(dim=-1, keepdim=True) + eps)
             nb = tb / (tb.norm(dim=-1, keepdim=True) + eps)
             combined = na + nb
@@ -89,7 +88,7 @@ def normalized_overlay_aggregator(eps: float = 1e-8) -> Aggregator:
     return aggregate
 
 
-def common_ground_aggregator(threshold: float = 0.0) -> Aggregator:
+def common_ground_aggregator(threshold: float = 0.0, padding_side: Literal["left", "right"] = "left") -> Aggregator:
     """
     Returns an aggregator that retains only the activation components both contents agree on.
 
@@ -112,7 +111,7 @@ def common_ground_aggregator(threshold: float = 0.0) -> Aggregator:
         result: Activations = {}
         common_layers = set(a.keys()) & set(b.keys())
         for layer in common_layers:
-            ta, tb = _align_tensors(a[layer], b[layer])
+            ta, tb = _align_tensors(a[layer], b[layer], padding_side=padding_side)
             same_sign = (ta * tb) > 0                          # [seq, hidden] boolean mask
             magnitude = torch.minimum(ta.abs(), tb.abs())      # smaller magnitude wins
             above_threshold = (ta.abs() >= threshold) & (tb.abs() >= threshold)
@@ -121,7 +120,7 @@ def common_ground_aggregator(threshold: float = 0.0) -> Aggregator:
     return aggregate
 
 
-def dampened_accumulator(damping: float = 0.9) -> Aggregator:
+def dampened_accumulator(damping: float = 0.9, padding_side: Literal["left", "right"] = "left") -> Aggregator:
     """
     Returns an aggregator that accumulates activations with exponential dampening.
 
@@ -145,13 +144,13 @@ def dampened_accumulator(damping: float = 0.9) -> Aggregator:
         result: Activations = {}
         common_layers = set(a.keys()) & set(b.keys())
         for layer in common_layers:
-            ta, tb = _align_tensors(a[layer], b[layer])
+            ta, tb = _align_tensors(a[layer], b[layer], padding_side=padding_side)
             result[layer] = damping * ta + tb
         return result
     return aggregate
 
 
-def difference_aggregator(absolute: bool = False) -> Aggregator:
+def difference_aggregator(absolute: bool = False, padding_side: Literal["left", "right"] = "left", last_token_only: bool = False) -> Aggregator:
     """
     Returns an aggregator that computes the activation difference between two contents.
 
@@ -162,6 +161,10 @@ def difference_aggregator(absolute: bool = False) -> Aggregator:
     Args:
         absolute (bool): If True, return the absolute difference |a - b|.
                          If False (default), return the signed difference a - b.
+        padding_side (str): The side to pad tensors if their sequence lengths mismatch.
+        last_token_only (bool): If True, computes the difference ONLY on the final token 
+                                of both sequences. This is critical for contrastive pairs
+                                that have different token lengths (e.g. "UK" vs "France").
 
     Returns:
         Aggregator: fn(a, b) -> {layer: a[layer] - b[layer]}  (or |.|)
@@ -170,8 +173,14 @@ def difference_aggregator(absolute: bool = False) -> Aggregator:
         result: Activations = {}
         common_layers = set(a.keys()) & set(b.keys())
         for layer in common_layers:
-            ta, tb = _align_tensors(a[layer], b[layer])
-            diff = ta - tb
+            # Optionally isolate extraction purely to the final accumulated state
+            ta_target = a[layer][-1:] if last_token_only else a[layer]
+            tb_target = b[layer][-1:] if last_token_only else b[layer]
+            
+            if not last_token_only:
+                ta_target, tb_target = _align_tensors(ta_target, tb_target, padding_side=padding_side)
+                
+            diff = ta_target - tb_target
             result[layer] = diff.abs() if absolute else diff
         return result
     return aggregate
@@ -181,16 +190,16 @@ def difference_aggregator(absolute: bool = False) -> Aggregator:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _align_tensors(a: torch.Tensor, b: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+def _align_tensors(a: torch.Tensor, b: torch.Tensor, padding_side: Literal["left", "right"] = "left") -> tuple[torch.Tensor, torch.Tensor]:
     """
     Aligns two tensors along the sequence dimension (dim 0) by padding the shorter one.
 
-    Padding is added on the *left* to match the left-padding convention used by the
-    tokenizer in patient.py. The hidden dimension must already match.
+    The hidden dimension must already match.
 
     Args:
         a: Tensor of shape (seq_len_a, hidden_dim)
         b: Tensor of shape (seq_len_b, hidden_dim)
+        padding_side (Literal["left", "right"]): The side to pad tensors.
 
     Returns:
         Tuple of tensors both with shape (max(seq_len_a, seq_len_b), hidden_dim)
@@ -199,10 +208,13 @@ def _align_tensors(a: torch.Tensor, b: torch.Tensor) -> tuple[torch.Tensor, torc
     if len_a == len_b:
         return a, b
     max_len = max(len_a, len_b)
+    
     if len_a < max_len:
         pad = torch.zeros(max_len - len_a, a.shape[1], dtype=a.dtype, device=a.device)
-        a = torch.cat([pad, a], dim=0)
+        a = torch.cat([pad, a] if padding_side == "left" else [a, pad], dim=0)
+        
     if len_b < max_len:
         pad = torch.zeros(max_len - len_b, b.shape[1], dtype=b.dtype, device=b.device)
-        b = torch.cat([pad, b], dim=0)
+        b = torch.cat([pad, b] if padding_side == "left" else [b, pad], dim=0)
+        
     return a, b
