@@ -1,0 +1,41 @@
+name: Publish to PyPI
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch: # Allows manual trigger from the GitHub Actions tab
+
+jobs:
+  build-and-publish:
+    name: Build and publish to PyPI
+    runs-on: ubuntu-latest
+
+    # Required for Trusted Publishing
+    environment:
+      name: pypi
+      url: https://pypi.org/p/lobopy
+
+    permissions:
+      id-token: write # IMPORTANT: mandatory for trusted publishing
+      contents: read # read access to repository contents
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install
+
+      - name: Build package
+        run: uv build
+
+      - name: Publish package distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # This action will automatically find the dist/ directory created by uv build
+          packages-dir: dist/
