@@ -52,3 +52,17 @@ class AnalysisResult:
     label:str
     activations:Dict[int, torch.Tensor]
     metadata: Dict[str, Any] = field(default_factory=dict)
+    
+@dataclass
+class IterativeGenerationResult:
+    input_text: str
+    output_text: str
+    is_matched: bool
+    is_mismatched: bool
+    is_max_token: bool
+    iteration_count: int
+
+@dataclass
+class IterativeAggregatedResult:
+    activations: Dict[int, torch.Tensor]
+    iterative_generation_results: Optional[List[IterativeGenerationResult]] = field(default_factory=list)
